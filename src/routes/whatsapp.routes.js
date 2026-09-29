@@ -59,95 +59,77 @@ router.post("/webhook", async (req, res) => {
             JSON.stringify(req.body, null, 2)
         );
 
-        const message =
-            req.body.entry?.[0]
-                ?.changes?.[0]
-                ?.value?.messages?.[0];
+        const messages = [];
 
-        if (!message) {
+        for (const entry of req.body.entry || []) {
+            for (const change of entry.changes || []) {
+                for (const message of change.value?.messages || []) {
+                    messages.push(message);
+                }
+            }
+        }
 
+        if (messages.length === 0) {
             console.log(
-                "No WhatsApp message found"
+                "Webhook received without inbound messages; this is usually a status notification."
             );
 
             return res.sendStatus(200);
         }
 
 
-        // Sender WhatsApp number
-        const from = message.from;
-
-        // Message text
-        const text =
-            message.text?.body || "";
-
-        console.log("FROM:", from);
-        console.log("MESSAGE:", text);
-
-
         // ==================================
-        // CHATBOT RESPONSE
+        // SEND A REPLY FOR EACH NEW MESSAGE
         // ==================================
 
-        let reply =
-            "Welcome to Elite Loan 👋\n\n" +
-            "How can I help you?\n\n" +
-            "1️⃣ Apply for a Loan\n" +
-            "2️⃣ Check Loan Status\n" +
-            "3️⃣ Loan Eligibility\n" +
-            "4️⃣ Talk to Support";
+        const apiVersion =
+            process.env.WHATSAPP_API_VERSION || "v24.0";
 
+        const url =
+            `https://graph.facebook.com/${apiVersion}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
 
-        if (
-            text.toLowerCase().trim() === "hi" ||
-            text.toLowerCase().trim() === "hello"
-        ) {
+        for (const message of messages) {
+            const from = message.from;
+            const text = message.text?.body || "";
 
-            reply =
+            if (!from) {
+                console.log("Skipping WhatsApp message without sender number");
+                continue;
+            }
+
+            console.log("FROM:", from);
+            console.log("MESSAGE:", text);
+
+            const reply =
                 "Welcome to Elite Loan 👋\n\n" +
                 "How can I help you?\n\n" +
                 "1️⃣ Apply for a Loan\n" +
                 "2️⃣ Check Loan Status\n" +
                 "3️⃣ Loan Eligibility\n" +
                 "4️⃣ Talk to Support";
+
+            await axios.post(
+                url,
+                {
+                    messaging_product: "whatsapp",
+                    to: from,
+                    type: "text",
+                    text: {
+                        body: reply
+                    }
+                },
+                {
+                    headers: {
+                        Authorization:
+                            `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+                        "Content-Type":
+                            "application/json"
+                    }
+                }
+            );
+
+            console.log("BOT REPLY SENT");
         }
-
-
-        // ==================================
-        // SEND MESSAGE TO WHATSAPP
-        // ==================================
-
-        const url =
-            `https://graph.facebook.com/vXX.X/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
-
-        await axios.post(
-            url,
-            {
-                messaging_product: "whatsapp",
-
-                to: from,
-
-                type: "text",
-
-                text: {
-                    body: reply
-                }
-            },
-            {
-                headers: {
-                    Authorization:
-                        `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
-
-                    "Content-Type":
-                        "application/json"
-                }
-            }
-        );
-
-
-        console.log(
-            "BOT REPLY SENT"
-        );
 
         return res.sendStatus(200);
 
